@@ -131,7 +131,7 @@ async def cmd_cek(update, ctx):
     if update.effective_user.id != ALLOWED_USER_ID: return
     await update.message.reply_text("Mengambil data portofolio...")
     try:
-        await update.message.reply_text(sheets.get_summary(),, parse_mode="Markdown")
+        await update.message.reply_text(sheets.get_summary(), parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"Error: {str(e)}")
 
