@@ -73,7 +73,13 @@ class PortfolioSheets:
             data = ws.get_all_values()
             if not data:
                 return "Belum ada data."
-            lines = ["PORTOFOLIO GW\n"]
+            
+            saham_lines = []
+            crypto_lines = []
+            cash_lines = []
+            total_modal = ""
+            total_bersih = ""
+
             for row in data:
                 if len(row) < 6:
                     continue
@@ -81,20 +87,37 @@ class PortfolioSheets:
                 qty   = row[3].strip()
                 modal = row[4].strip()
                 nilai = row[5].strip()
-                if nama in ["BBRI","BBCA","SMRA","BITCOIN","SOLANA","Pengu","Cash","Deposit"]:
-                    lines.append(f"{nama} | {qty} | Modal: {modal} | Nilai: {nilai}")
+
+                if nama in ["BBRI","BBCA","SMRA"]:
+                    saham_lines.append(f"  {nama} | {qty}\n  Modal: {modal}\n  Nilai: *{nilai}*")
+                elif nama in ["BITCOIN","SOLANA","Pengu"]:
+                    crypto_lines.append(f"  {nama} | {qty}\n  Modal: {modal}\n  Nilai: *{nilai}*")
+                elif nama in ["Cash","Deposit","Emas"]:
+                    if nilai:
+                        cash_lines.append(f"  {nama}: {nilai}")
+
             for row in data:
-                if len(row) >= 5 and "TOTAL" in row[3].upper():
-                    lines.append(f"\nTOTAL MODAL  : {row[4]}")
-                    lines.append(f"TOTAL BERSIH : {row[5]}")
+                if len(row) >= 6 and "TOTAL" in str(row[3]).upper():
+                    total_modal = row[4]
+                    total_bersih = row[5]
                     break
+
+            lines = [
+                "📊 *PORTOFOLIO GW*",
+                "───────────────────",
+                "🏦 *SAHAM*",
+                *saham_lines,
+                "",
+                "₿ *CRYPTO*",
+                *crypto_lines,
+                "",
+                "💵 *CASH & LAINNYA*",
+                *cash_lines,
+                "───────────────────",
+                f"💼 Total Modal  : {total_modal}",
+                f"✨ Total Bersih : *{total_bersih}*",
+            ]
+
             return "\n".join(lines)
         except Exception as e:
             return f"Error baca data: {str(e)}"
-
-    def catat_log(self, tanggal, aksi, aset, qty, harga, total, catatan=""):
-        try:
-            ws = self.spreadsheet.worksheet("Transaksi Bot")
-        except:
-            ws = self.spreadsheet.add_worksheet(title="Transaksi Bot", rows=1000, cols=7)
-        ws.append_row([tanggal, aksi, aset, qty, harga, total, catatan])
