@@ -1,6 +1,6 @@
 """
 Personal Investment Copilot — Telegram Bot
-Groq API (Llama 3.1) + Google Sheets Monitoring
+Gemini AI + Google Sheets Monitoring
 """
 
 import os, json, logging, requests
@@ -14,10 +14,12 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN  = os.environ["TELEGRAM_TOKEN"]
 ALLOWED_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
-GROQ_API_KEY    = os.environ["GROQ_API_KEY"]
+GEMINI_API_KEY  = os.environ["GEMINI_API_KEY"]
 sheets = PortfolioSheets()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
+
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 
 # ─────────────────────────────────────────────────────────────
 # SYSTEM PROMPT — One-shot classifier + parser
@@ -59,7 +61,7 @@ Rules:
 - For crypto with total only (no quantity): set quantity_coin = total_investment_idr / price_entry (if price known)
 - For crypto with quantity only: set total_investment_idr = quantity_coin * price_entry (if price known)
 - If price missing, set price_entry = null
-- Number formats: 1.1M=1100000, 1.5jt=1500000, 500rb=500000, 1.1miliar=1100000000
+- Number formats: 1.1M=1100000, 1.5jt=1500000, 500rb=500000, 1.1miliar=1100000000, 68rb=68000
 - Date if not mentioned = {TODAY}
 
 Examples:
@@ -99,57 +101,53 @@ ONLY return JSON. Nothing else."""
 
 
 # ─────────────────────────────────────────────────────────────
-# API CALLS
+# GEMINI API CALLS
 # ─────────────────────────────────────────────────────────────
-def call_groq_classify(pesan):
-    """Classify + parse message in one shot"""
+def call_gemini(prompt, system=None, temperature=0.1, max_tokens=500):
+    """Generic Gemini API call"""
+    contents = []
+    if system:
+        contents.append({"role": "user", "parts": [{"text": system}]})
+        contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions exactly."}]})
+    contents.append({"role": "user", "parts": [{"text": prompt}]})
+
     resp = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        GEMINI_URL,
+        headers={"Content-Type": "application/json"},
         json={
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": pesan}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 400
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            }
         },
         timeout=30
     )
     if resp.status_code != 200:
-        raise Exception(f"Groq error {resp.status_code}: {resp.text[:200]}")
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
+        raise Exception(f"Gemini error {resp.status_code}: {resp.text[:300]}")
+    
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+def call_gemini_classify(pesan):
+    """Classify + parse message — returns dict"""
+    raw = call_gemini(pesan, system=SYSTEM_PROMPT, temperature=0.1, max_tokens=400)
     raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
 
-def call_groq_chat(pesan):
-    """Free chat mode — answer anything"""
-    resp = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model": "llama-3.1-8b-instant",
-            "messages": [
-                {"role": "system", "content": (
-                    "Kamu adalah asisten AI yang ramah, cerdas, dan helpful. "
-                    "Jawab dalam bahasa yang sama dengan user (Indonesia/English/campur). "
-                    "Jawab langsung, natural, dan singkat. "
-                    "Kamu bisa menjawab apapun: puisi, cerita, pertanyaan umum, dll. "
-                    "Untuk pertanyaan yang butuh data real-time (cuaca hari ini, harga saham live, berita terbaru), "
-                    "jelaskan bahwa kamu tidak punya akses internet tapi berikan info umum yang kamu tahu."
-                )},
-                {"role": "user", "content": pesan}
-            ],
-            "temperature": 0.7,
-            "max_tokens": 500
-        },
-        timeout=30
+def call_gemini_chat(pesan):
+    """Free chat mode — returns string"""
+    system_chat = (
+        "Kamu adalah asisten AI yang ramah, cerdas, dan helpful. "
+        "Jawab dalam bahasa yang sama dengan user (Indonesia/English/campur). "
+        "Jawab langsung, natural, dan singkat. "
+        "Kamu bisa menjawab apapun: puisi, cerita, pertanyaan umum, dll. "
+        "Untuk pertanyaan yang butuh data real-time (cuaca hari ini, harga saham live, berita terbaru), "
+        "jelaskan bahwa kamu tidak punya akses internet real-time tapi berikan info umum yang kamu tahu."
     )
-    if resp.status_code != 200:
-        raise Exception(f"Groq error {resp.status_code}: {resp.text[:200]}")
-    return resp.json()["choices"][0]["message"]["content"].strip()
+    return call_gemini(pesan, system=system_chat, temperature=0.7, max_tokens=500)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -215,7 +213,7 @@ async def handle_pesan(update, ctx):
     await update.message.reply_text("Memproses...")
 
     try:
-        parsed = call_groq_classify(pesan)
+        parsed = call_gemini_classify(pesan)
         log.info(f"Classified: {parsed}")
         msg_type = parsed.get("type")
 
@@ -227,7 +225,7 @@ async def handle_pesan(update, ctx):
         # ── GENERAL CHAT ─────────────────────────────────────
         if msg_type == "general_chat":
             original = parsed.get("message", pesan)
-            jawaban = call_groq_chat(original)
+            jawaban = call_gemini_chat(original)
             await update.message.reply_text(jawaban)
             return
 
@@ -245,7 +243,6 @@ async def handle_pesan(update, ctx):
 
             qty = qty_lot if asset_type == "stock" else qty_coin
 
-            # Validasi minimal
             if not asset_name:
                 await update.message.reply_text("Aset tidak dikenali. Coba: beli BBRI 2 lot harga 4000")
                 return
@@ -259,7 +256,6 @@ async def handle_pesan(update, ctx):
 
             await update.message.reply_text("Menyimpan ke Monitoring...")
 
-            # Tulis ke sheet Monitoring
             row = sheets.catat_transaksi(
                 asset_name=asset_name,
                 date=date,
@@ -269,7 +265,6 @@ async def handle_pesan(update, ctx):
                 catatan=notes
             )
 
-            # Catat juga di log Transaksi Bot
             sheets.catat_log(
                 tanggal=date,
                 aksi="BELI" if action == "buy" else "JUAL",
@@ -280,7 +275,6 @@ async def handle_pesan(update, ctx):
                 catatan=notes
             )
 
-            # Format konfirmasi
             aksi_label = "BELI" if action == "buy" else "JUAL"
             qty_label  = f"{qty_lot} lot" if asset_type == "stock" else f"{qty_coin} koin"
             harga_str  = f"Rp {float(price):,.0f}" if price else "dari harga real-time sheet"
@@ -296,7 +290,6 @@ async def handle_pesan(update, ctx):
             )
             return
 
-        # Fallback
         await update.message.reply_text("Tidak mengerti. Coba: beli BBRI 2 lot harga 4000")
 
     except json.JSONDecodeError:
@@ -317,7 +310,7 @@ def main():
     app.add_handler(CommandHandler("cek",   cmd_cek))
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pesan))
-    log.info("Personal Investment Copilot berjalan...")
+    log.info("Personal Investment Copilot (Gemini) berjalan...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
