@@ -80,7 +80,7 @@ class PortfolioSheets:
     def get_summary(self):
         """Ambil ringkasan transaksi dari sheet Transaksi Bot"""
         try:
-            ws = self.spreadsheet.worksheet("Transaksi Bot")
+            ws = self.spreadsheet.worksheet("Financial Assets")
             data = ws.get_all_values()
             if not data:
                 return "Belum ada transaksi tercatat."
