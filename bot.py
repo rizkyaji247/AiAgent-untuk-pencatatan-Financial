@@ -193,6 +193,12 @@ async def handle_pesan(update, ctx):
             notes      = parsed.get("notes") or ""
             qty        = qty_lot if asset_type == "stock" else qty_coin
 
+            # Hitung ulang sendiri — jangan percaya AI untuk matematika
+            if asset_type == "stock" and qty_lot and price:
+                total_idr = int(qty_lot) * 100 * float(price)
+            elif asset_type == "crypto" and qty_coin and price:
+                total_idr = float(qty_coin) * float(price)
+
             if not asset_name:
                 await update.message.reply_text("Aset tidak dikenali. Coba: beli BBRI 2 lot harga 4000")
                 return
