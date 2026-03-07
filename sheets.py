@@ -6,17 +6,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Mapping aset ke kolom di sheet "Monitoring" (1-indexed)
-# Format: (col_tanggal, col_harga_entry, col_jumlah_beli, col_qty, col_catatan)
 ASSET_COLS = {
-    "BBRI":    (1,  2,  3,  4,  6),   # A, B, C, D, F
-    "BBCA":    (9,  10, 11, 12, 14),  # I, J, K, L, N
-    "BITCOIN": (18, 19, 20, 21, 23),  # R, S, T, U, W
-    "SOLANA":  (27, 28, 29, 30, 32),  # AA, AB, AC, AD, AF
-    "SMRA":    (35, 36, 37, 38, 40),  # AI, AJ, AK, AL, AN
+    "BBRI":    (1,  2,  3,  4,  6),
+    "BBCA":    (9,  10, 11, 12, 14),
+    "BITCOIN": (18, 19, 20, 21, 23),
+    "SOLANA":  (27, 28, 29, 30, 32),
+    "SMRA":    (35, 36, 37, 38, 40),
 }
 
-# Alias normalisasi
 ALIAS = {
     "BTC": "BITCOIN",
     "SOL": "SOLANA",
@@ -24,14 +21,14 @@ ALIAS = {
     "SOLANA": "SOLANA",
 }
 
-DATA_START_ROW = 5  # Data mulai dari baris 5
+DATA_START_ROW = 5
 
 
 class PortfolioSheets:
     def __init__(self):
         creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
         if not creds_json:
-            raise ValueError("GOOGLE_CREDENTIALS_JSON tidak ditemukan di environment!")
+            raise ValueError("GOOGLE_CREDENTIALS_JSON tidak ditemukan!")
         creds = Credentials.from_service_account_info(
             json.loads(creds_json), scopes=SCOPES
         )
@@ -42,30 +39,24 @@ class PortfolioSheets:
         return self.spreadsheet.worksheet("Monitoring")
 
     def _next_empty_row(self, ws, col_tanggal):
-        """Cari baris kosong pertama di kolom tanggal aset mulai dari DATA_START_ROW"""
         col_values = ws.col_values(col_tanggal)
-        # col_values index 0 = row 1
         for i in range(DATA_START_ROW - 1, len(col_values)):
             if col_values[i] == "" or col_values[i] is None:
-                return i + 1  # convert ke 1-indexed row
-        return len(col_values) + 1  # tambah baris baru di bawah
+                return i + 1
+        return len(col_values) + 1
 
     def _normalize_asset(self, nama):
         nama = nama.upper().strip()
         return ALIAS.get(nama, nama)
 
     def catat_transaksi(self, asset_name, date, price_entry, total_idr, qty, catatan=""):
-        """Tulis transaksi ke kolom yang benar di sheet Monitoring"""
         kode = self._normalize_asset(asset_name)
         if kode not in ASSET_COLS:
-            raise ValueError(f"Aset '{kode}' tidak dikenal. Aset yang didukung: {list(ASSET_COLS.keys())}")
-
+            raise ValueError(f"Aset '{kode}' tidak dikenal. Didukung: {list(ASSET_COLS.keys())}")
         col_tgl, col_harga, col_total, col_qty, col_cat = ASSET_COLS[kode]
-
         ws = self._monitoring()
         row = self._next_empty_row(ws, col_tgl)
-
-        # Tulis data ke sel yang tepat
+        ws.update_cell(row, col_tgl, str(date))
         if price_entry:
             ws.update_cell(row, col_harga, float(price_entry))
         if total_idr:
@@ -74,9 +65,9 @@ class PortfolioSheets:
             ws.update_cell(row, col_qty, float(qty))
         if catatan:
             ws.update_cell(row, col_cat, str(catatan))
-            
         return row
-  def get_summary(self):
+
+    def get_summary(self):
         try:
             ws = self.spreadsheet.worksheet("Financial Assets")
             data = ws.get_all_values()
@@ -102,7 +93,6 @@ class PortfolioSheets:
             return f"Error baca data: {str(e)}"
 
     def catat_log(self, tanggal, aksi, aset, qty, harga, total, catatan=""):
-        """Catat log transaksi di sheet Transaksi Bot sebagai backup"""
         try:
             ws = self.spreadsheet.worksheet("Transaksi Bot")
         except:
