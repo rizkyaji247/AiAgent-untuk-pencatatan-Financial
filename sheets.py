@@ -97,7 +97,7 @@ class PortfolioSheets:
                         cash_lines.append(f"  {nama}: {nilai}")
 
             for row in data:
-                if len(row) >= 6 and "TOTAL" in str(row[3]).upper():
+                if len(row) >= 6 and any ("TOTAL PORTO" in str(cell).upper()for cell in row ):
                     total_modal = row[4]
                     total_bersih = row[5]
                     break
