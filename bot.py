@@ -1,6 +1,6 @@
 """
 Personal Investment Copilot — Telegram Bot
-Gemini AI + Google Sheets Monitoring
+Groq AI (Llama 3.1) + Google Sheets Monitoring
 """
 
 import os, json, logging, requests
@@ -14,15 +14,16 @@ log = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN  = os.environ["TELEGRAM_TOKEN"]
 ALLOWED_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
-GEMINI_API_KEY  = os.environ["GEMINI_API_KEY"]
+GROQ_API_KEY    = os.environ["GROQ_API_KEY"]
 sheets = PortfolioSheets()
 
 TODAY = datetime.now().strftime("%Y-%m-%d")
 
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 # ─────────────────────────────────────────────────────────────
-# SYSTEM PROMPT — One-shot classifier + parser
+# SYSTEM PROMPT
 # ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = f"""You are a Personal Investment Copilot AI for Telegram.
 Your job: classify user message into ONE of 3 types and return ONLY valid JSON.
@@ -30,124 +31,82 @@ NO extra text, NO markdown, NO backticks. ONLY JSON.
 
 TODAY = {TODAY}
 
-═══════════════════════════════════════════════
 TYPE 1 — TRANSACTION
-═══════════════════════════════════════════════
 Triggered by: buy/sell intent for stocks or crypto.
-Keywords (flexible): "beli", "jual", "buy", "sell", "DCA", "nambah posisi",
-"masuk lagi", "exit", "catat", "aku beli", "gw beli", "abis beli", "saya membeli"
+Keywords: "beli", "jual", "buy", "sell", "DCA", "nambah posisi", "masuk lagi",
+"exit", "catat", "aku beli", "gw beli", "abis beli", "saya membeli"
 
 Supported assets:
 - Stocks (IDX): BBRI, BBCA, SMRA → unit: LOT (1 lot = 100 shares)
-- Crypto: BITCOIN (alias: BTC, bitcoin), SOLANA (alias: SOL, solana), PENGU → unit: COIN
+- Crypto: BITCOIN (alias: BTC), SOLANA (alias: SOL), PENGU → unit: COIN
 
 Output schema:
-{{
-  "type": "transaction",
-  "action": "buy" | "sell",
-  "asset_type": "stock" | "crypto",
-  "asset_name": "BBRI" | "BBCA" | "SMRA" | "BITCOIN" | "SOLANA" | "PENGU",
-  "date": "YYYY-MM-DD",
-  "quantity_lot": number | null,
-  "quantity_coin": number | null,
-  "total_investment_idr": number | null,
-  "price_entry": number | null,
-  "notes": "string" | null
-}}
+{{"type":"transaction","action":"buy"|"sell","asset_type":"stock"|"crypto","asset_name":"BBRI"|"BBCA"|"SMRA"|"BITCOIN"|"SOLANA"|"PENGU","date":"YYYY-MM-DD","quantity_lot":number|null,"quantity_coin":number|null,"total_investment_idr":number|null,"price_entry":number|null,"notes":"string"|null}}
 
 Rules:
-- asset_name must be UPPERCASE and normalized (BTC→BITCOIN, SOL→SOLANA, btc→BITCOIN)
-- For stocks: total_investment_idr = quantity_lot * 100 * price_entry
-- For crypto with total only (no quantity): set quantity_coin = total_investment_idr / price_entry (if price known)
-- For crypto with quantity only: set total_investment_idr = quantity_coin * price_entry (if price known)
-- If price missing, set price_entry = null
+- asset_name UPPERCASE normalized (BTC→BITCOIN, SOL→SOLANA)
+- stocks: total_investment_idr = quantity_lot * 100 * price_entry
 - Number formats: 1.1M=1100000, 1.5jt=1500000, 500rb=500000, 1.1miliar=1100000000, 68rb=68000
-- Date if not mentioned = {TODAY}
+- Date default = {TODAY}
 
 Examples:
 User: "gw abis beli 4 lot bbri di harga 4000"
 {{"type":"transaction","action":"buy","asset_type":"stock","asset_name":"BBRI","date":"{TODAY}","quantity_lot":4,"quantity_coin":null,"total_investment_idr":1600000,"price_entry":4000,"notes":null}}
 
-User: "aku beli bitcoin 5 juta"
+User: "beli bitcoin 5 juta"
 {{"type":"transaction","action":"buy","asset_type":"crypto","asset_name":"BITCOIN","date":"{TODAY}","quantity_lot":null,"quantity_coin":null,"total_investment_idr":5000000,"price_entry":null,"notes":null}}
 
-User: "gw abis beli bitcoin diharga 68rb dollar dengan 700000idr"
+User: "beli bitcoin diharga 68rb dollar dengan 700000idr"
 {{"type":"transaction","action":"buy","asset_type":"crypto","asset_name":"BITCOIN","date":"{TODAY}","quantity_lot":null,"quantity_coin":null,"total_investment_idr":700000,"price_entry":null,"notes":"harga USD 68000"}}
 
-User: "jual 5 lot BBRI harga 4200 take profit"
-{{"type":"transaction","action":"sell","asset_type":"stock","asset_name":"BBRI","date":"{TODAY}","quantity_lot":5,"quantity_coin":null,"total_investment_idr":2100000,"price_entry":4200,"notes":"take profit"}}
-
-═══════════════════════════════════════════════
 TYPE 2 — PORTFOLIO QUERY
-═══════════════════════════════════════════════
-Triggered by: user wants to check their portfolio.
-Keywords: "cek portofolio", "portfolio gw", "porto gw", "lihat porto",
-"summary", "total aset", "ringkasan", "/cek"
+Triggered by: user wants to check portfolio.
+Keywords: "cek portofolio", "porto gw", "lihat porto", "summary", "total aset"
+Output: {{"type":"portfolio_query"}}
 
-Output:
-{{"type":"portfolio_query"}}
-
-═══════════════════════════════════════════════
 TYPE 3 — GENERAL CHAT
-═══════════════════════════════════════════════
-Triggered by: EVERYTHING else — questions, small talk, requests outside portfolio.
-Examples: weather, news, poems, explanations, jokes, greetings
+Triggered by: EVERYTHING else — questions, small talk, poems, jokes, greetings, etc.
+Output: {{"type":"general_chat","message":"<original user message>"}}
 
-Output:
-{{"type":"general_chat","message":"<original user message here>"}}
-
-IMPORTANT: If in doubt between transaction and general_chat, choose general_chat.
-ONLY return JSON. Nothing else."""
+IMPORTANT: If in doubt, choose general_chat. ONLY return JSON. Nothing else."""
 
 
 # ─────────────────────────────────────────────────────────────
-# GEMINI API CALLS
+# API CALLS
 # ─────────────────────────────────────────────────────────────
-def call_gemini(prompt, system=None, temperature=0.1, max_tokens=500):
-    """Generic Gemini API call"""
-    contents = []
-    if system:
-        contents.append({"role": "user", "parts": [{"text": system}]})
-        contents.append({"role": "model", "parts": [{"text": "Understood. I will follow these instructions exactly."}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
-
+def call_groq(messages, temperature=0.1, max_tokens=400):
     resp = requests.post(
-        GEMINI_URL,
-        headers={"Content-Type": "application/json"},
-        json={
-            "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-            }
-        },
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        json={"model": GROQ_MODEL, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
         timeout=30
     )
     if resp.status_code != 200:
-        raise Exception(f"Gemini error {resp.status_code}: {resp.text[:300]}")
-    
-    data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        raise Exception(f"Groq error {resp.status_code}: {resp.text[:200]}")
+    return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def call_gemini_classify(pesan):
-    """Classify + parse message — returns dict"""
-    raw = call_gemini(pesan, system=SYSTEM_PROMPT, temperature=0.1, max_tokens=400)
+def call_groq_classify(pesan):
+    raw = call_groq([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": pesan}
+    ], temperature=0.1, max_tokens=400)
     raw = raw.replace("```json", "").replace("```", "").strip()
     return json.loads(raw)
 
 
-def call_gemini_chat(pesan):
-    """Free chat mode — returns string"""
-    system_chat = (
-        "Kamu adalah asisten AI yang ramah, cerdas, dan helpful. "
-        "Jawab dalam bahasa yang sama dengan user (Indonesia/English/campur). "
-        "Jawab langsung, natural, dan singkat. "
-        "Kamu bisa menjawab apapun: puisi, cerita, pertanyaan umum, dll. "
-        "Untuk pertanyaan yang butuh data real-time (cuaca hari ini, harga saham live, berita terbaru), "
-        "jelaskan bahwa kamu tidak punya akses internet real-time tapi berikan info umum yang kamu tahu."
-    )
-    return call_gemini(pesan, system=system_chat, temperature=0.7, max_tokens=500)
+def call_groq_chat(pesan):
+    return call_groq([
+        {"role": "system", "content": (
+            "Kamu adalah asisten AI yang ramah, cerdas, dan helpful. "
+            "Jawab dalam bahasa yang sama dengan user (Indonesia/English/campur). "
+            "Jawab langsung, natural, dan singkat. "
+            "Kamu bisa menjawab apapun: puisi, cerita, pertanyaan umum, dll. "
+            "Untuk data real-time (cuaca hari ini, harga live, berita terbaru), "
+            "jelaskan bahwa kamu tidak punya akses internet tapi berikan info umum yang kamu tahu."
+        )},
+        {"role": "user", "content": pesan}
+    ], temperature=0.7, max_tokens=500)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -182,22 +141,15 @@ async def cmd_help(update, ctx):
         "PANDUAN — Ngomong bebas!\n\n"
         "BELI SAHAM:\n"
         "• beli BBRI 2 lot harga 4000\n"
-        "• gw abis beli 3 lot bbri seharga 4000\n"
-        "• nambah posisi BBCA 1 lot di 7200\n\n"
+        "• gw abis beli 3 lot bbri seharga 4000\n\n"
         "BELI CRYPTO:\n"
         "• beli BTC 0.001 koin harga 1.1M\n"
-        "• DCA bitcoin 500rb di harga 1.1 miliar\n"
-        "• beli solana senilai 500rb\n\n"
+        "• DCA bitcoin 500rb di harga 1.1 miliar\n\n"
         "JUAL:\n"
         "• jual BBRI 5 lot harga 4200 take profit\n"
         "• exit SOL 0.1 koin harga 1.5jt\n\n"
-        "CEK PORTOFOLIO:\n"
-        "• cek portofolio / /cek\n\n"
-        "NGOBROL BEBAS:\n"
-        "• buatkan puisi\n"
-        "• jelaskan inflasi\n"
-        "• dll\n\n"
-        "Format angka: 4000 | 1.1M | 1.5jt | 500rb | 1.1miliar"
+        "CEK: cek portofolio / /cek\n\n"
+        "NGOBROL BEBAS: puisi, pertanyaan, dll"
     )
 
 
@@ -213,7 +165,7 @@ async def handle_pesan(update, ctx):
     await update.message.reply_text("Memproses...")
 
     try:
-        parsed = call_gemini_classify(pesan)
+        parsed = call_groq_classify(pesan)
         log.info(f"Classified: {parsed}")
         msg_type = parsed.get("type")
 
@@ -224,8 +176,7 @@ async def handle_pesan(update, ctx):
 
         # ── GENERAL CHAT ─────────────────────────────────────
         if msg_type == "general_chat":
-            original = parsed.get("message", pesan)
-            jawaban = call_gemini_chat(original)
+            jawaban = call_groq_chat(parsed.get("message", pesan))
             await update.message.reply_text(jawaban)
             return
 
@@ -240,39 +191,27 @@ async def handle_pesan(update, ctx):
             total_idr  = parsed.get("total_investment_idr")
             price      = parsed.get("price_entry")
             notes      = parsed.get("notes") or ""
-
-            qty = qty_lot if asset_type == "stock" else qty_coin
+            qty        = qty_lot if asset_type == "stock" else qty_coin
 
             if not asset_name:
                 await update.message.reply_text("Aset tidak dikenali. Coba: beli BBRI 2 lot harga 4000")
                 return
 
             if not total_idr and not qty:
-                await update.message.reply_text(
-                    f"Kurang info untuk {asset_name}.\n"
-                    "Sebutkan jumlah lot/koin atau total IDR."
-                )
+                await update.message.reply_text(f"Kurang info untuk {asset_name}. Sebutkan jumlah lot/koin atau total IDR.")
                 return
 
             await update.message.reply_text("Menyimpan ke Monitoring...")
 
             row = sheets.catat_transaksi(
-                asset_name=asset_name,
-                date=date,
-                price_entry=price,
-                total_idr=total_idr,
-                qty=qty,
-                catatan=notes
+                asset_name=asset_name, date=date,
+                price_entry=price, total_idr=total_idr,
+                qty=qty, catatan=notes
             )
-
             sheets.catat_log(
-                tanggal=date,
-                aksi="BELI" if action == "buy" else "JUAL",
-                aset=asset_name,
-                qty=qty or "",
-                harga=price or "",
-                total=total_idr or "",
-                catatan=notes
+                tanggal=date, aksi="BELI" if action == "buy" else "JUAL",
+                aset=asset_name, qty=qty or "", harga=price or "",
+                total=total_idr or "", catatan=notes
             )
 
             aksi_label = "BELI" if action == "buy" else "JUAL"
@@ -293,7 +232,7 @@ async def handle_pesan(update, ctx):
         await update.message.reply_text("Tidak mengerti. Coba: beli BBRI 2 lot harga 4000")
 
     except json.JSONDecodeError:
-        await update.message.reply_text("Gagal parse response AI. Coba ulangi lebih jelas.")
+        await update.message.reply_text("Gagal parse AI. Coba ulangi lebih jelas.")
     except ValueError as e:
         await update.message.reply_text(f"Error: {str(e)}")
     except Exception as e:
@@ -310,7 +249,7 @@ def main():
     app.add_handler(CommandHandler("cek",   cmd_cek))
     app.add_handler(CommandHandler("help",  cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pesan))
-    log.info("Personal Investment Copilot (Gemini) berjalan...")
+    log.info("Personal Investment Copilot (Groq) berjalan...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
