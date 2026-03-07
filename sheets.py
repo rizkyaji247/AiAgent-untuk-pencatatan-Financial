@@ -66,11 +66,15 @@ class PortfolioSheets:
         row = self._next_empty_row(ws, col_tgl)
 
         # Tulis data ke sel yang tepat
-        ws.update_cell(row, col_tgl,   str(date))
-        ws.update_cell(row, col_harga, float(price_entry) if price_entry else "")
-        ws.update_cell(row, col_total, float(total_idr) if total_idr else "")
-        ws.update_cell(row, col_qty,   float(qty) if qty else "")
-        ws.update_cell(row, col_cat,   str(catatan) if catatan else "")
+       ws.update_cell(row, col_tgl, str(date))
+if price_entry:
+    ws.update_cell(row, col_harga, float(price_entry))
+if total_idr:
+    ws.update_cell(row, col_total, float(total_idr))
+if qty:
+    ws.update_cell(row, col_qty, float(qty))
+if catatan:
+    ws.update_cell(row, col_cat, str(catatan))
 
         return row
 
