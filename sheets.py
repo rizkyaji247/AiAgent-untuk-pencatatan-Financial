@@ -84,18 +84,33 @@ class PortfolioSheets:
             data = ws.get_all_values()
             if not data:
                 return "Belum ada transaksi tercatat."
-            lines = ["RINGKASAN TRANSAKSI\n"]
-            count = 0
-            for row in data:
-                if len(row) >= 3 and row[1] in ["BELI", "JUAL"]:
-                    lines.append(f"{row[0]} | {row[1]} | {row[2]} | qty:{row[3]} | Rp {row[4]}")
-                    count += 1
-            if count == 0:
-                return "Belum ada transaksi via bot."
-            lines.append(f"\nTotal: {count} transaksi")
-            return "\n".join(lines)
-        except Exception as e:
-            return f"Error baca data: {str(e)}"
+                lines = ["PORTOFOLIO GW\n"]
+for row in data:
+    if len(row) < 6:
+        continue
+    nama = row[2].strip()      # kolom C = nama aset
+    qty  = row[3].strip()      # kolom D = quantity
+    modal = row[4].strip()     # kolom E = total modal
+    nilai = row[5].strip()     # kolom F = nilai bersih
+
+    # Hanya tampilkan baris yang nama asetnya dikenal
+    if nama in ["BBRI","BBCA","SMRA","BITCOIN","SOLANA","Pengu","Cash","Deposit"]:
+        lines.append(f"{nama} | {qty} | Modal: {modal} | Nilai: {nilai}")
+
+# Ambil total dari baris TOTAL PORTOFOLIO BERSIH
+for row in data:
+    if len(row) >= 5 and "TOTAL" in row[3].upper():
+        lines.append(f"\nTOTAL MODAL  : {row[4]}")
+        lines.append(f"TOTAL BERSIH : {row[5]}")
+        break
+
+return "\n".join(lines)
+
+
+
+
+
+    
 
     def catat_log(self, tanggal, aksi, aset, qty, harga, total, catatan=""):
         """Catat log transaksi di sheet Transaksi Bot sebagai backup"""
