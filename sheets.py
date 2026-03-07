@@ -77,34 +77,30 @@ class PortfolioSheets:
 
         return row
 
-    def get_summary(self):
-        """Ambil ringkasan transaksi dari sheet Transaksi Bot"""
+  def get_summary(self):
         try:
             ws = self.spreadsheet.worksheet("Financial Assets")
             data = ws.get_all_values()
             if not data:
-                return "Belum ada transaksi tercatat."
-                lines = ["PORTOFOLIO GW\n"]
-for row in data:
-    if len(row) < 6:
-        continue
-    nama = row[2].strip()      # kolom C = nama aset
-    qty  = row[3].strip()      # kolom D = quantity
-    modal = row[4].strip()     # kolom E = total modal
-    nilai = row[5].strip()     # kolom F = nilai bersih
-
-    # Hanya tampilkan baris yang nama asetnya dikenal
-    if nama in ["BBRI","BBCA","SMRA","BITCOIN","SOLANA","Pengu","Cash","Deposit"]:
-        lines.append(f"{nama} | {qty} | Modal: {modal} | Nilai: {nilai}")
-
-# Ambil total dari baris TOTAL PORTOFOLIO BERSIH
-for row in data:
-    if len(row) >= 5 and "TOTAL" in row[3].upper():
-        lines.append(f"\nTOTAL MODAL  : {row[4]}")
-        lines.append(f"TOTAL BERSIH : {row[5]}")
-        break
-
-return "\n".join(lines)
+                return "Belum ada data."
+            lines = ["PORTOFOLIO GW\n"]
+            for row in data:
+                if len(row) < 6:
+                    continue
+                nama  = row[2].strip()
+                qty   = row[3].strip()
+                modal = row[4].strip()
+                nilai = row[5].strip()
+                if nama in ["BBRI","BBCA","SMRA","BITCOIN","SOLANA","Pengu","Cash","Deposit"]:
+                    lines.append(f"{nama} | {qty} | Modal: {modal} | Nilai: {nilai}")
+            for row in data:
+                if len(row) >= 5 and "TOTAL" in row[3].upper():
+                    lines.append(f"\nTOTAL MODAL  : {row[4]}")
+                    lines.append(f"TOTAL BERSIH : {row[5]}")
+                    break
+            return "\n".join(lines)
+        except Exception as e:
+            return f"Error baca data: {str(e)}"
 
 
 
