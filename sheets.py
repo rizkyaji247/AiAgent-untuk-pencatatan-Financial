@@ -74,6 +74,7 @@ class PortfolioSheets:
             ws.update_cell(row, col_qty, float(qty))
         if catatan:
             ws.update_cell(row, col_cat, str(catatan))
+            
         return row
   def get_summary(self):
         try:
@@ -99,12 +100,6 @@ class PortfolioSheets:
             return "\n".join(lines)
         except Exception as e:
             return f"Error baca data: {str(e)}"
-
-
-
-
-
-    
 
     def catat_log(self, tanggal, aksi, aset, qty, harga, total, catatan=""):
         """Catat log transaksi di sheet Transaksi Bot sebagai backup"""
