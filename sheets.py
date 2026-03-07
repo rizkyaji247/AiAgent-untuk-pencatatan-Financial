@@ -74,9 +74,7 @@ class PortfolioSheets:
             ws.update_cell(row, col_qty, float(qty))
         if catatan:
             ws.update_cell(row, col_cat, str(catatan))
-
         return row
-
   def get_summary(self):
         try:
             ws = self.spreadsheet.worksheet("Financial Assets")
