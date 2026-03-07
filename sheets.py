@@ -121,19 +121,3 @@ class PortfolioSheets:
             return "\n".join(lines)
         except Exception as e:
             return f"Error baca data: {str(e)}"
-
-   def catat_log(self, tanggal, aksi, aset, qty, harga, total, catatan=""):
-        try:
-            ws = self.spreadsheet.worksheet("Transaksi Bot")
-        except:
-            ws = self.spreadsheet.add_worksheet(title="Transaksi Bot", rows=1000, cols=7)
-        ws.append_row([tanggal, aksi, aset, qty, harga, total, catatan])
-```
-
-Jadi urutan akhir file kamu:
-```
-baris 121  return "\n".join(lines)
-baris 122  except Exception as e:
-baris 123      return f"Error baca data: {str(e)}"
-baris 124  (kosong)
-baris 125  def catat_log(self, ...):   ← tambah di sini
