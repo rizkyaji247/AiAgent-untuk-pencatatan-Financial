@@ -127,7 +127,7 @@ python bot.py
 
 ## 📝 Catatan
 
-Proyek ini dibuat dengan pendekatan **vibe-driven development** — ide besar, eksekusi dengan bantuan AI. Masih dalam pengembangan aktif.
+Proyek ini dibuat dengan pendekatan **vibe-driven development** — ide yang tiba-tiba datang, eksekusi dengan bantuan AI. Masih dalam pengembangan aktif.
 
 ---
 
